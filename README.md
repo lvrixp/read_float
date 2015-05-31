@@ -16,7 +16,6 @@
       -h, --help            show this help message and exit
       -f FILE_PATH, --filepath=FILE_PATH
                             file path to be read
-    ValueError: Invalid file path: None
 
 
 ### Testing ###
