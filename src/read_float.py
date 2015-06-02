@@ -37,7 +37,6 @@ def count_and_sum(iterable):
     Raises:
         ValueError: item that can be recognized as float is found
     '''
-
     # record the total count of float numbers
     total = [0]
 
@@ -58,33 +57,31 @@ def count_and_sum(iterable):
         After generator been iterated, total count of items will be set to total[0].
         '''
 
+        # try to read 64K each time
+        # need to test for optimal value of chunk size
+        CHUNKSIZE = 64*1024
         start = 0
         end = 0
         while start < len(iterable):
-            while start < len(iterable) and is_seperator(iterable[start]):
-                start += 1
-            
-            # reach the end of the iterator
-            if start == len(iterable):
-                break
-    
-            # find the end of current item
-            end = start
+            end = min(start + CHUNKSIZE, len(iterable))
+
+            # end will point to next seperator
             while end < len(iterable) and not is_seperator(iterable[end]):
                 end += 1
-            
-            # add the count of item
-            total[0] += 1
-
-            # try to convert the item to float
-            try:
-                res = float(iterable[start:end])
-            except ValueError:
-                # if it fail, try to use locale
-                # if locale still fail, it raises ValueError
-                res = locale.atof(iterable[start:end])
-
-            yield res
+    
+            for item in iterable[start:end].split():
+                # add the count of item
+                total[0] += 1
+    
+                # try to convert the item to float
+                try:
+                    res = float(item)
+                except ValueError:
+                    # if it fail, try to use locale
+                    # if locale still fail, it raises ValueError
+                    res = locale.atof(item)
+    
+                yield res
 
             # continue to scan another item
             start = end
@@ -99,7 +96,6 @@ def count_and_sum(iterable):
         return 0, 0.0
 
     return total[0], sum_all
-
 
 def get_file_path():
     '''Check the input arguments for the file path
@@ -122,7 +118,7 @@ def main():
         file_path = get_file_path()
         with open(file_path, 'r+') as fin:
             # use mmap file to gain performance against big file
-            mm_obj = mmap.mmap(fin.fileno(), 0)
+            mm_obj = mmap.mmap(fin.fileno(), 0, mmap.ACCESS_READ)
 
             total, sum_all = count_and_sum(mm_obj)
             sys.stdout.write(PROMPTMSG % (total, sum_all))
