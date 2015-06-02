@@ -1,11 +1,14 @@
-'''A tool to read float numbers from input file or pipe, and prompt total count and sum.
+#!/usr/bin/python
+
+'''A tool to read float numbers from input file or pipe \
+        and prompt total count and sum.
 '''
 
 import sys
 import os
 from optparse import OptionParser
-import fileinput
 import locale
+import mmap
 
 # items that will be exported
 __all__ = ["count_and_sum"]
@@ -21,12 +24,12 @@ Sum of all  = %s
 def count_and_sum(iterable):
     '''count_and_sum(iterable)
 
-    Accept iterator, of which each item is a string, \
-    and scan the float in each item to get the total count and sum.
+    Accept character iterator, of which each item is a character, \
+    and scan all float numbers to get the total count and sum.
     It may raise exception if there's item can't be recognized as float.
 
     Args:
-        iterable: an iteratable item that carries float numbers
+        iterable: an iterator, each element is a character
 
     Returns:
         A pair that contains the count and sum of all the float been scanned
@@ -35,80 +38,104 @@ def count_and_sum(iterable):
         ValueError: item that can be recognized as float is found
     '''
 
-    # _total to record the total count of float numbers
-    _total = [0]
+    # record the total count of float numbers
+    total = [0]
 
     # handle special case that can't be handled by float()
     # eg. 10,000
     locale.setlocale(locale.LC_ALL, 'en_US.UTF-8')
 
-    def _item_generator(iterable, total):
-        '''_item_generator(iterable, total):
-
-        Embedded utility of 'count_and_sum',
-        it create an generator object on each item found in the iterator.
-        Each item in the generator is a string that been stripped.
-        After generator been iterated, total count of items will be calculated.
+    def is_seperator(character):
+        '''check whether a character is seperator
         '''
-        for _item in iterable:
-            for _sub_item in _item.split():
-                # add to the total count of items
-                total[0] += 1
-                _sub_item = _sub_item.strip()
-                try:
-                    retval = float(_sub_item)
-                except ValueError, err:
-                    # if locale still can't handle it
-                    # it will raise ValueError again
-                    # and upper level will handle it
-                    retval = locale.atof(_sub_item)
+        return character in [' ', os.linesep, '\t']
 
-                yield retval
+    def item_generator(iterable, total):
+        '''item_generator(iterable, total):
 
-        # handle the case if there's nothing input
-        yield 0
+        Create a generator object.
+        Each item in the generator is a float.
+        After generator been iterated, total count of items will be set to total[0].
+        '''
 
-    _all_items = _item_generator(iterable, _total)
+        start = 0
+        end = 0
+        while start < len(iterable):
+            while start < len(iterable) and is_seperator(iterable[start]):
+                start += 1
+            
+            # reach the end of the iterator
+            if start == len(iterable):
+                break
+    
+            # find the end of current item
+            end = start
+            while end < len(iterable) and not is_seperator(iterable[end]):
+                end += 1
+            
+            # add the count of item
+            total[0] += 1
+
+            # try to convert the item to float
+            try:
+                res = float(iterable[start:end])
+            except ValueError:
+                # if it fail, try to use locale
+                # if locale still fail, it raises ValueError
+                res = locale.atof(iterable[start:end])
+
+            yield res
+
+            # continue to scan another item
+            start = end
+    
+    all_items = item_generator(iterable, total)
 
     #sum of all the float numbers
-    _sum = reduce(lambda a, b: float(a) + float(b), _all_items)
+    try:
+        sum_all = reduce(lambda a, b: a + b, all_items)
+    except TypeError:
+        # nothing in the 'all_items'
+        return 0, 0.0
 
-    return _total[0], _sum
+    return total[0], sum_all
 
 
-def _get_file_path():
+def get_file_path():
     '''Check the input arguments for the file path
     '''
-    _parser = OptionParser()
-    _parser.add_option("-f", "--filepath", dest='file_path', help="file path to be read")
-    _options, _ = _parser.parse_args()
+    parser = OptionParser()
+    parser.add_option("-f", "--filepath", dest='file_path', \
+                            help="file path to be read")
+    options, _ = parser.parse_args()
 
-    if _options.file_path == '-':
-        return '-'
+    if options.file_path is None or not os.path.isfile(options.file_path):
+        parser.print_help()
+        raise ValueError("Invalid file path: %s" % options.file_path)
 
-    if _options.file_path is None or not os.path.isfile(_options.file_path):
-        _parser.print_help()
-        raise ValueError("Invalid file path: %s" % _options.file_path)
+    return options.file_path
 
-    return _options.file_path
-
-def _main():
+def main():
     '''Main function of the tool
     '''
     try:
-        _file_path = _get_file_path()
-        _fin = fileinput.input(_file_path)
-        _total, _sum = count_and_sum(_fin)
-        sys.stdout.write(PROMPTMSG % (_total, _sum))
+        file_path = get_file_path()
+        with open(file_path, 'r+') as fin:
+            # use mmap file to gain performance against big file
+            mm_obj = mmap.mmap(fin.fileno(), 0)
+
+            total, sum_all = count_and_sum(mm_obj)
+            sys.stdout.write(PROMPTMSG % (total, sum_all))
     except ValueError, err:
-        msg = "ValueError: %s\n" % str(err)
+        msg = "ValueError: %s\nValue can't be convert to float\n" % str(err)
         sys.stderr.write(msg)
-    except SystemExit, err:
-        msg = "SystemExit: %s\n" % str(err)
+    except mmap.error, err:
+        msg = "mmmap.error: %s\nplease check the input file\n" % str(err)
+        sys.stderr.write(msg)
     except BaseException, err:
         msg = "Unexpected error: %s\n" % str(err)
         sys.stderr.write(msg)
 
 if __name__ == "__main__":
-    _main()
+    main()
 
